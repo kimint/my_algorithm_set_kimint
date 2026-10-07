@@ -1,5 +1,7 @@
 # Convex Partition Algorithm
 
+한국어 | [English](README.en.md)
+
 단순 다각형(simple polygon)을 **대각선만 그어서**(새 점 추가 없이) 볼록 다각형들로 나누는 스택 기반 알고리즘입니다.
 최적해를 구하는 동적계획법도 함께 들어 있어서 결과를 비교할 수 있습니다.
 
