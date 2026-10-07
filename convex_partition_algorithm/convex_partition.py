@@ -392,7 +392,7 @@ class ConvexPartition:
         return stack2
 
     def _phase3(self, stack2):
-        """Step 9~13: stack2 에 남은 reflex 꼭짓점을 대각선 하나씩으로 해결한다."""
+        """Step 9~13: stack2 에 남은 reflex 꼭짓점을 대각선으로 해결한다."""
         self._log("\n[Step 9~13] stack2 에 남은 꼭짓점 처리")
         while stack2:
             vt = stack2.pop()
@@ -401,19 +401,83 @@ class ConvexPartition:
                 continue
 
             self._log(f"  {vt}: reflex -> 대각선 찾는 중")
-            vt2 = self.nxt(vt)
-            while vt2 != vt:
-                if vt2 in self.incident[vt]:
-                    # vt-vt2 는 이미 그어져 있음 -> '대각선 하나로 안 되는 경우' 로 처리
-                    self._log(f"    {vt}-{vt2} 는 이미 그어진 대각선 -> 하나로 안 되는 경우로 처리")
-                    break
+
+            # [이전 방식] vt 부터 반시계 방향으로 돌면서 vt2 를 찾음
+            # vt2 = self.nxt(vt)
+            # while vt2 != vt:
+            #     if vt2 in self.incident[vt]:
+            #         # vt-vt2 는 이미 그어져 있음 -> '대각선 하나로 안 되는 경우' 로 처리
+            #         self._log(f"    {vt}-{vt2} 는 이미 그어진 대각선 -> 하나로 안 되는 경우로 처리")
+            #         break
+            #     if self.can_draw(vt, vt2) and self.is_convex_now(vt, extra=vt2):
+            #         self.draw(vt, vt2)
+            #         break
+            #     vt2 = self.nxt(vt2)
+
+            # [현재 방식] vt 의 가장 큰 각의 이등분선이 경계와 만나는 곳에서
+            # 오른쪽 / 왼쪽 꼭짓점을 번갈아 확인
+            for vt2 in self._bisector_candidates(vt):
                 if self.can_draw(vt, vt2) and self.is_convex_now(vt, extra=vt2):
                     self.draw(vt, vt2)
                     break
-                vt2 = self.nxt(vt2)
 
             if not self.is_convex_now(vt):
                 self._fix_dynamically(vt)
+
+    def _bisector_candidates(self, vt):
+        """
+        vt 의 가장 큰 각(현재 조각 기준)을 반으로 나누는 선을 조각 안쪽으로 쏘고,
+        그 선이 조각 경계의 변 (a, b) 와 만나면 b, a, b 다음, a 이전, ... 순서로
+        좌우를 번갈아 가며 후보 꼭짓점을 돌려준다.
+        """
+        P = self.P
+
+        def ang(a, b):
+            return math.atan2(P[b][1] - P[a][1], P[b][0] - P[a][0])
+
+        # vt 의 각이 가장 큰 조각 찾기
+        best = None
+        for f in self.vfaces[vt]:
+            face = self.faces[f]
+            k = face.index(vt)
+            nx, pv = face[(k + 1) % len(face)], face[k - 1]
+            wedge = (ang(vt, pv) - ang(vt, nx)) % (2 * math.pi)
+            if best is None or wedge > best[0]:
+                best = (wedge, face, nx)
+        wedge, face, nx = best
+        m = len(face)
+
+        # 이등분선과 조각 경계가 처음 만나는 변
+        theta = ang(vt, nx) + wedge / 2
+        dx, dy = math.cos(theta), math.sin(theta)
+        px, py = P[vt]
+        hit, t_min = None, float("inf")
+        for e in range(m):
+            a, b = face[e], face[(e + 1) % m]
+            if vt in (a, b):
+                continue
+            ex, ey = P[b][0] - P[a][0], P[b][1] - P[a][1]
+            den = dx * ey - dy * ex
+            if abs(den) < 1e-15:
+                continue
+            wx, wy = P[a][0] - px, P[a][1] - py
+            t = (wx * ey - wy * ex) / den       # 이등분선 위의 거리
+            s = (wx * dy - wy * dx) / den       # 변 위의 위치 (0~1)
+            if t > EPS and -EPS <= s <= 1 + EPS and t < t_min:
+                hit, t_min = e, t
+        if hit is None:
+            return []
+
+        self._log(f"    이등분선이 {face[hit]}-{face[(hit + 1) % m]} 변과 만남")
+        order, seen = [], {vt}
+        right, left = (hit + 1) % m, hit
+        while len(seen) < m:
+            for idx in (right, left):
+                if face[idx] not in seen:
+                    seen.add(face[idx])
+                    order.append(face[idx])
+            right, left = (right + 1) % m, (left - 1) % m
+        return order
 
     def _fix_dynamically(self, vt):
         """
